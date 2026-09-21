@@ -579,7 +579,7 @@ let hardMode = false;
 
 // Bumped by one on every exported build so a stale cached copy is always
 // visually distinguishable from the latest version.
-const GAME_VERSION = 105;
+const GAME_VERSION = 106;
 
 // ---------- Art style palette ----------
 // Solid-shape earth-tone style: natural ground colors, dark grey unit hulls,
@@ -2997,7 +2997,7 @@ function genCompounds(seedValue) {
     (currentMapSize === 'large' ? 14 : 8);
 
   const roadHalfWidth = ROAD_TILE_SIZE * 0.16;
-  const roadGap = 34;
+  const roadGap = 42;
   const compoundGap = 30;
 
   function halfExtentsFor(size, rotation, meta) {
@@ -3183,19 +3183,9 @@ function genCompounds(seedValue) {
     makeCompoundAt(x,y,key,rotation,true);
   }
 
-  // Final fallback: distributed map placement, used only when unusual maps
-  // have too little usable roadside space.
-  if (compounds.length < targetCount) {
-    const cols = currentMapSize==='small'?3:6;
-    const rows = currentMapSize==='small'?2:4;
-    for (let row=0;row<rows && compounds.length<targetCount;row++) {
-      for (let col=0;col<cols && compounds.length<targetCount;col++) {
-        const x=WORLD.w*((col+0.5)/cols);
-        const y=WORLD.h*((row+0.5)/rows);
-        makeCompoundAt(x,y,null,null,false);
-      }
-    }
-  }
+  // No free-map fallback: every compound must be beside an actual road.
+  // If a map does not have enough usable roadside space, fewer compounds are
+  // generated rather than placing any compound away from the road or on it.
 }
 
 // ---------------------------------------------------------------------------
