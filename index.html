@@ -579,7 +579,7 @@ let hardMode = false;
 
 // Bumped by one on every exported build so a stale cached copy is always
 // visually distinguishable from the latest version.
-const GAME_VERSION = 101;
+const GAME_VERSION = 102;
 
 // ---------- Art style palette ----------
 // Solid-shape earth-tone style: natural ground colors, dark grey unit hulls,
@@ -2224,13 +2224,40 @@ function genRoadNetwork(rnd, biomeCfg, cellBlocked) {
   // enough independent long roads criss-crossing the map to seed a dense
   // network of branches off of, rather than relying on branches alone to
   // fill in from just 1-2 starting lines.
-  const mainRoadCount = isUrbanHell ? (4 + Math.floor(rnd()*3)) : (1 + Math.floor(rnd()*2));
+  const mainRoadCount = isUrbanHell ? (6 + Math.floor(rnd()*3)) : (1 + Math.floor(rnd()*2));
   for (let i=0; i<mainRoadCount; i++) {
     const vertical = rnd() < 0.5;
-    const startCol = vertical ? Math.floor(rnd()*cellsW) : -1;
-    const startRow = vertical ? -1 : Math.floor(rnd()*cellsH);
+    // Start on the map edge rather than one cell outside it. The previous
+    // -1 start positions were immediately rejected by the terrain blocker,
+    // so the main road walkers could terminate before adding their first tile.
+    let startCol = vertical ? Math.floor(rnd()*cellsW) : 0;
+    let startRow = vertical ? 0 : Math.floor(rnd()*cellsH);
+
+    // If the chosen edge cell is blocked by terrain, find another clear edge
+    // cell. This is especially important on Urban Hell, where we want a
+    // guaranteed road network even when lakes occupy some edge cells.
+    if (cellBlocked && cellBlocked(startCol,startRow)) {
+      let found = false;
+      if (vertical) {
+        for (let retry=0; retry<cellsW; retry++) {
+          const candidateCol = retry;
+          if (!cellBlocked(candidateCol,0)) {
+            startCol = candidateCol; startRow = 0; found = true; break;
+          }
+        }
+      } else {
+        for (let retry=0; retry<cellsH; retry++) {
+          const candidateRow = retry;
+          if (!cellBlocked(0,candidateRow)) {
+            startCol = 0; startRow = candidateRow; found = true; break;
+          }
+        }
+      }
+      if (!found) continue;
+    }
+
     const dir = vertical ? 'S' : 'E';
-    const maxSteps = (vertical ? cellsH : cellsW) + 4; // enough steps to comfortably cross the whole map plus a little past both edges
+    const maxSteps = (vertical ? cellsH : cellsW) + 4;
     walk(startCol, startRow, dir, maxSteps, 0.94);
   }
 }
@@ -3581,6 +3608,7 @@ function genBuildings(seedValue) {
     tryPlaceBuilding(spot.x, spot.y);
   }
 }
+genCompounds(terrainSeed);
 genBuildings(terrainSeed);
 
 // Check if a line segment between two points crosses any mountain (for LOS / weapon fire)
@@ -4129,6 +4157,7 @@ function generateNewMap(sizeKey, biomeKey) {
   genTerrain(terrainSeed);
   buildNavGrid();
   genTrees(terrainSeed);
+  genCompounds(terrainSeed);
   genBuildings(terrainSeed);
   // Both of these were previously one-time IIFEs that ran once at script
   // load using whatever WORLD.w/h happened to be the default at that
