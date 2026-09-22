@@ -136,10 +136,13 @@
     background: rgba(20,28,24,0.9); color: #cfe0d6;
   }
 
-  /* Launch screen */
+  /* Launch screen - brown backdrop (matches the game's grassland ground
+     tones / the instructions screen gradient) so any letterboxing around
+     the title artwork, and the New Game setup screen behind it, blend with
+     the rest of the game instead of showing plain white. */
   #launchScreen, #optionsScreen {
     position: fixed; inset: 0; z-index: 80;
-    background: #fff;
+    background: linear-gradient(160deg, #8a7a5c 0%, #6f6047 55%, #3a3428 100%);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 10px;
   }
@@ -185,10 +188,6 @@
     outline: 2px solid rgba(0,0,0,0.45);
     outline-offset: 2px;
   }
-  #launchVersion {
-    display: none;
-  }
-
   /* Instructions overlay: unlike launchScreen/optionsScreen (which center
      their content vertically since it always fits one screen), this one is
      genuinely long-form content - a rules overview plus 14 units each with
@@ -248,6 +247,63 @@
     border-radius: 8px; padding: 8px 16px;
     font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
     margin: 0 20px 0 0;
+  }
+
+  /* Unit Options screen: same full-screen scrollable brown overlay pattern
+     as the instructions screen (a two-column checklist can run to 32 rows
+     total - 16 units x 2 teams - so it needs real scrolling, not the
+     vertically-centered launchScreen/optionsScreen treatment). */
+  #unitOptionsScreen {
+    display: none;
+    position: fixed; inset: 0; z-index: 90;
+    background: linear-gradient(160deg, #8a7a5c 0%, #6f6047 55%, #3a3428 100%);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #unitOptionsContent {
+    max-width: 640px; margin: 0 auto;
+    padding: 28px 20px 100px;
+    color: #f4efe3;
+  }
+  #unitOptionsContent h1 {
+    font-size: 26px; font-weight: 700; letter-spacing: 0.04em;
+    text-align: center; margin: 0 0 4px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  }
+  #unitOptionsSubtext {
+    font-size: 13px; line-height: 1.5; color: #e8dfc8;
+    text-align: center; margin: 8px 0 20px;
+  }
+  #btnCloseUnitOptions {
+    position: sticky; top: 14px; float: right;
+    background: rgba(20,28,24,0.85); color: #f4efe3;
+    border: 1px solid rgba(244,239,227,0.4);
+    border-radius: 8px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
+    margin: 0 20px 0 0;
+  }
+  .unitOptionsColumns {
+    display: flex; gap: 14px; clear: both;
+  }
+  .unitOptionsCol { flex: 1; min-width: 0; }
+  .unitOptionsColHeader {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.05em;
+    text-align: center; padding: 8px; border-radius: 10px 10px 0 0;
+  }
+  .unitOptionsColHeader.blueHeader { background: rgba(79,176,255,0.3); color: #eaf6ff; }
+  .unitOptionsColHeader.redHeader { background: rgba(255,92,77,0.3); color: #ffece8; }
+  .unitOptionsList {
+    background: rgba(20,28,24,0.28); border-radius: 0 0 10px 10px;
+    padding: 4px 0;
+  }
+  .unitOptionRow {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px; font-size: 12.5px; line-height: 1.3;
+    border-bottom: 1px solid rgba(244,239,227,0.12);
+  }
+  .unitOptionRow:last-child { border-bottom: none; }
+  .unitOptionRow input[type="checkbox"] {
+    width: 17px; height: 17px; flex-shrink: 0; accent-color: #4fd07a;
   }
   #launchTitle {
     color: #f4efe3; font-size: 34px; font-weight: 700; letter-spacing: 0.08em;
@@ -455,16 +511,35 @@
       <button class="optionBtn" id="optBiomeGrassland" data-group="biome" data-value="grassland">GRASSY PLAINS</button>
     </div>
     <div class="optionRow">
-      <button class="optionBtn" id="optBiomeUrban" data-group="biome" data-value="urban">URBAN HELL</button>
+      <button class="optionBtn" id="optBiomeUrban" data-group="biome" data-value="urban">INDUSTRIAL HELL</button>
       <button class="optionBtn" id="optBiomeIce" data-group="biome" data-value="ice">ICE</button>
     </div>
     <div class="optionRow">
       <button class="optionBtn" id="optBiomeFortressCity" data-group="biome" data-value="fortressCity">FORTRESS CITY</button>
     </div>
   </div>
-  <button class="launchBtn" id="btnOptionsConfirm" style="margin-top:22px;">START GAME</button>
+  <button class="launchBtn" id="btnUnitOptions" style="margin-top:22px; background:rgba(20,28,24,0.55); color:#f4efe3; border:1px solid rgba(244,239,227,0.4);">UNIT OPTIONS</button>
+  <button class="launchBtn" id="btnOptionsConfirm">START GAME</button>
   <button class="launchBtn" id="btnOptionsBack" style="background:rgba(20,28,24,0.55); color:#f4efe3; border:1px solid rgba(244,239,227,0.4);">BACK</button>
   <div id="launchSubtext">Aggressive: the enemy captures depots early but skips garrisoning them, instead throwing ever-larger waves of attackers at you as fast as it can. Defensive: the enemy fortifies everything it captures before going on the offensive. Map size affects the number of extra neutral supply depots in play. Each biome changes the terrain's look and layout: mountain frequency, tree and building placement, and how much water is on the map.</div>
+</div>
+
+<div id="unitOptionsScreen">
+  <button id="btnCloseUnitOptions">DONE</button>
+  <div id="unitOptionsContent">
+    <h1>UNIT OPTIONS</h1>
+    <p id="unitOptionsSubtext">Uncheck a unit to make it unavailable to that team for this game - it can't be purchased by the player, and the computer won't build it either. Checked units are available as normal.</p>
+    <div class="unitOptionsColumns">
+      <div class="unitOptionsCol">
+        <div class="unitOptionsColHeader blueHeader">BLUE (PLAYER)</div>
+        <div class="unitOptionsList" id="unitOptionsBlueList"></div>
+      </div>
+      <div class="unitOptionsCol">
+        <div class="unitOptionsColHeader redHeader">RED (COMPUTER)</div>
+        <div class="unitOptionsList" id="unitOptionsRedList"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="instructionsScreen">
@@ -631,7 +706,7 @@ let hardMode = false;
 
 // Bumped by one on every exported build so a stale cached copy is always
 // visually distinguishable from the latest version.
-const GAME_VERSION = 112;
+const GAME_VERSION = 114;
 
 // ---------- Art style palette ----------
 // Solid-shape earth-tone style: natural ground colors, dark grey unit hulls,
@@ -1187,7 +1262,7 @@ const BIOME_CONFIGS = {
     centerBuildingBlock: false
   },
   urban: {
-    label: 'Urban Hell',
+    label: 'Industrial Hell',
     palette: {
       groundBase: '#6e6e6e', groundShadowLo: '#616161', groundShadowMid: '#585858',
       scrubDark: '#4a6b3d', scrubLight: '#5c8a4a', dirtPath: '#7a7a7a',
@@ -4679,6 +4754,9 @@ function updateRepair(dt) {
 // backward compatibility with existing call sites.
 function purchaseUnit(team, unitType) {
   unitType = unitType || 'tank';
+  // Unit Options gate: applies to every purchase for both teams, since both
+  // the player's buy buttons and every red AI purchase call through here.
+  if (unitEnabled[team] && unitEnabled[team][unitType] === false) return false;
   const cost = UNIT_COSTS[unitType];
   if (supply[team] < cost) return false;
   const base = team==='blue' ? blueBase : redBase;
@@ -5703,6 +5781,27 @@ const ESCORTS_PER_CAPTURER = 2; // Tank/Artillery sent along with each Infantry 
 // type, rather than relying on someone remembering to add it to an
 // exclusion list.
 const ALL_UNIT_TYPES = Object.keys(UNIT_COSTS);
+
+// Per-team unit availability, set from the "Unit Options" screen in New Game
+// setup (every type defaults to enabled for both teams). Gated centrally in
+// purchaseUnit() below, which is the single choke point both the player's
+// buy buttons and every red AI purchase already go through - so disabling a
+// unit there is enough on its own to make it unbuyable for that team. Red's
+// own target-picking (pickWeightedPurchaseTarget and the near-cap spend-down
+// below) additionally skips disabled types so the AI doesn't keep wastefully
+// committing to something it isn't allowed to buy.
+const unitEnabled = { blue: {}, red: {} };
+ALL_UNIT_TYPES.forEach(type => { unitEnabled.blue[type] = true; unitEnabled.red[type] = true; });
+// Maps each purchasable type to its buy-button element id, so the per-frame
+// button-state update below (and the Unit Options hide/show) can be one
+// small loop instead of one hand-written block per unit.
+const BUY_BUTTON_IDS = {
+  tank: 'btnBuyTank', artillery: 'btnBuyArtillery', scout: 'btnBuyScout', autotank: 'btnBuyAutoTank',
+  turret: 'btnBuyTurret', infantry: 'btnBuyInfantry', mortar: 'btnBuyMortar', blockhouse: 'btnBuyBlockhouse',
+  repairstation: 'btnBuyRepairStation', mech: 'btnBuyMech', assaulttank: 'btnBuyAssaultTank', apc: 'btnBuyAPC',
+  lrmmech: 'btnBuyLRMMech', siegemortar: 'btnBuySiegeMortar', atinfantry: 'btnBuyATInfantry', sappers: 'btnBuySappers'
+};
+
 const RED_PURCHASE_WEIGHTS = {
   infantry: 5, tank: 3, artillery: 3, mech: 2, assaulttank: 2, lrmmech: 1,
   blockhouse: 2, turret: 2, mortar: 2, apc: 1,
@@ -5747,7 +5846,11 @@ const RED_PURCHASE_WEIGHTS_AGGRESSIVE = {
 function pickWeightedPurchaseTarget() {
   const weights = redStrategy === 'aggressive' ? RED_PURCHASE_WEIGHTS_AGGRESSIVE : RED_PURCHASE_WEIGHTS;
   const pool = [];
-  ALL_UNIT_TYPES.forEach(type => {
+  // Skip anything unchecked for red on the Unit Options screen; fall back to
+  // the full roster only in the degenerate case where every type has been
+  // disabled, so this never picks from an empty pool.
+  const eligible = ALL_UNIT_TYPES.filter(type => unitEnabled.red[type]);
+  (eligible.length ? eligible : ALL_UNIT_TYPES).forEach(type => {
     const weight = weights[type] || 1;
     for (let i=0;i<weight;i++) pool.push(type);
   });
@@ -5910,7 +6013,7 @@ function updateAI(dt) {
     redPurchaseTarget = pickWeightedPurchaseTarget();
   } else if (supply.red >= UNIT_COSTS[redPurchaseTarget] * HOARD_MULTIPLE || nearCap) {
     const weights = redStrategy === 'aggressive' ? RED_PURCHASE_WEIGHTS_AGGRESSIVE : RED_PURCHASE_WEIGHTS;
-    const affordable = ALL_UNIT_TYPES.filter(type => UNIT_COSTS[type] <= supply.red);
+    const affordable = ALL_UNIT_TYPES.filter(type => UNIT_COSTS[type] <= supply.red && unitEnabled.red[type]);
     if (affordable.length > 0) {
       // weighted choice among everything currently affordable, so the spend-
       // down still favors the same composition as ordinary purchases would
@@ -9005,6 +9108,44 @@ document.getElementById('btnOptionsConfirm').addEventListener('click', ()=>{
   enterPlayMode(selectedStance, selectedMapSize, selectedBiome);
 });
 
+// ---------- Unit Options screen ----------
+// One row per purchasable unit type (ALL_UNIT_TYPES, the same set the buy
+// row and red's own purchase logic use) in each of two columns, checked by
+// default. Built once, like buildUnitCards - the checkboxes themselves just
+// read/write the shared unitEnabled object directly, so no separate "apply"
+// step is needed; unchecking one takes effect immediately (purchaseUnit
+// gates on it), including mid-game if this screen is ever reopened.
+function buildUnitOptionsScreen() {
+  const blueList = document.getElementById('unitOptionsBlueList');
+  const redList = document.getElementById('unitOptionsRedList');
+  if (blueList.childElementCount > 0) return; // build once
+  ALL_UNIT_TYPES.forEach(type => {
+    const label = (UNIT_DESCRIPTIONS[type] && UNIT_DESCRIPTIONS[type].label) || type;
+    [['blue', blueList], ['red', redList]].forEach(([team, list]) => {
+      const row = document.createElement('label');
+      row.className = 'unitOptionRow';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = unitEnabled[team][type];
+      cb.addEventListener('change', () => { unitEnabled[team][type] = cb.checked; });
+      row.appendChild(cb);
+      const span = document.createElement('span');
+      span.textContent = label;
+      row.appendChild(span);
+      list.appendChild(row);
+    });
+  });
+}
+document.getElementById('btnUnitOptions').addEventListener('click', ()=>{
+  buildUnitOptionsScreen();
+  document.getElementById('optionsScreen').style.display = 'none';
+  document.getElementById('unitOptionsScreen').style.display = 'block';
+});
+document.getElementById('btnCloseUnitOptions').addEventListener('click', ()=>{
+  document.getElementById('unitOptionsScreen').style.display = 'none';
+  document.getElementById('optionsScreen').style.display = 'flex';
+});
+
 // ---------- Save / Load ----------
 // Persists the full mutable game state to localStorage. Terrain, the nav grid,
 // and decorations are NOT saved: they're generated from a fixed seed at
@@ -9508,69 +9649,18 @@ function updateHUD() {
     supplyCounterEl.classList.remove('visible');
   }
 
-  const buyBtn = document.getElementById('btnBuyTank');
-  if (supply.blue >= UNIT_COSTS.tank && blueBase.alive) buyBtn.classList.remove('disabled');
-  else buyBtn.classList.add('disabled');
-
-  const buyArtyBtn = document.getElementById('btnBuyArtillery');
-  if (supply.blue >= UNIT_COSTS.artillery && blueBase.alive) buyArtyBtn.classList.remove('disabled');
-  else buyArtyBtn.classList.add('disabled');
-
-  const buyScoutBtn = document.getElementById('btnBuyScout');
-  if (supply.blue >= UNIT_COSTS.scout && blueBase.alive) buyScoutBtn.classList.remove('disabled');
-  else buyScoutBtn.classList.add('disabled');
-
-  const buyAutoTankBtn = document.getElementById('btnBuyAutoTank');
-  if (supply.blue >= UNIT_COSTS.autotank && blueBase.alive) buyAutoTankBtn.classList.remove('disabled');
-  else buyAutoTankBtn.classList.add('disabled');
-
-  const buyTurretBtn = document.getElementById('btnBuyTurret');
-  if (supply.blue >= UNIT_COSTS.turret && blueBase.alive) buyTurretBtn.classList.remove('disabled');
-  else buyTurretBtn.classList.add('disabled');
-
-  const buyInfantryBtn = document.getElementById('btnBuyInfantry');
-  if (supply.blue >= UNIT_COSTS.infantry && blueBase.alive) buyInfantryBtn.classList.remove('disabled');
-  else buyInfantryBtn.classList.add('disabled');
-
-  const buyMortarBtn = document.getElementById('btnBuyMortar');
-  if (supply.blue >= UNIT_COSTS.mortar && blueBase.alive) buyMortarBtn.classList.remove('disabled');
-  else buyMortarBtn.classList.add('disabled');
-
-  const buyBlockhouseBtn = document.getElementById('btnBuyBlockhouse');
-  if (supply.blue >= UNIT_COSTS.blockhouse && blueBase.alive) buyBlockhouseBtn.classList.remove('disabled');
-  else buyBlockhouseBtn.classList.add('disabled');
-
-  const buyRepairStationBtn = document.getElementById('btnBuyRepairStation');
-  if (supply.blue >= UNIT_COSTS.repairstation && blueBase.alive) buyRepairStationBtn.classList.remove('disabled');
-  else buyRepairStationBtn.classList.add('disabled');
-
-  const buyMechBtn = document.getElementById('btnBuyMech');
-  if (supply.blue >= UNIT_COSTS.mech && blueBase.alive) buyMechBtn.classList.remove('disabled');
-  else buyMechBtn.classList.add('disabled');
-
-  const buyAssaultTankBtn = document.getElementById('btnBuyAssaultTank');
-  if (supply.blue >= UNIT_COSTS.assaulttank && blueBase.alive) buyAssaultTankBtn.classList.remove('disabled');
-  else buyAssaultTankBtn.classList.add('disabled');
-
-  const buyAPCBtn = document.getElementById('btnBuyAPC');
-  if (supply.blue >= UNIT_COSTS.apc && blueBase.alive) buyAPCBtn.classList.remove('disabled');
-  else buyAPCBtn.classList.add('disabled');
-
-  const buyLRMMechBtn = document.getElementById('btnBuyLRMMech');
-  if (supply.blue >= UNIT_COSTS.lrmmech && blueBase.alive) buyLRMMechBtn.classList.remove('disabled');
-  else buyLRMMechBtn.classList.add('disabled');
-
-  const buySiegeMortarBtn = document.getElementById('btnBuySiegeMortar');
-  if (supply.blue >= UNIT_COSTS.siegemortar && blueBase.alive) buySiegeMortarBtn.classList.remove('disabled');
-  else buySiegeMortarBtn.classList.add('disabled');
-
-  const buyATInfantryBtn = document.getElementById('btnBuyATInfantry');
-  if (supply.blue >= UNIT_COSTS.atinfantry && blueBase.alive) buyATInfantryBtn.classList.remove('disabled');
-  else buyATInfantryBtn.classList.add('disabled');
-
-  const buySappersBtn = document.getElementById('btnBuySappers');
-  if (supply.blue >= UNIT_COSTS.sappers && blueBase.alive) buySappersBtn.classList.remove('disabled');
-  else buySappersBtn.classList.add('disabled');
+  // A unit unchecked for blue on the Unit Options screen is hidden from the
+  // buy row entirely (not just greyed out), since "can't afford it right
+  // now" and "not available this game" are different things worth showing
+  // differently. Everything else keeps the existing afford/base-alive check.
+  ALL_UNIT_TYPES.forEach(type => {
+    const btn = document.getElementById(BUY_BUTTON_IDS[type]);
+    if (!btn) return;
+    if (!unitEnabled.blue[type]) { btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    if (supply.blue >= UNIT_COSTS[type] && blueBase.alive) btn.classList.remove('disabled');
+    else btn.classList.add('disabled');
+  });
 }
 
 function gameLoop(now) {
