@@ -631,7 +631,7 @@ let hardMode = false;
 
 // Bumped by one on every exported build so a stale cached copy is always
 // visually distinguishable from the latest version.
-const GAME_VERSION = 111;
+const GAME_VERSION = 112;
 
 // ---------- Art style palette ----------
 // Solid-shape earth-tone style: natural ground colors, dark grey unit hulls,
@@ -8436,11 +8436,22 @@ function updateStealthConcealment(dt) {
       return;
     }
 
-    // Cooldown satisfied: accumulate dwell time while touching a tree or
-    // building, reset the instant contact is lost - this is a continuous
-    // 5-second requirement, not a cumulative one, per "touching...for more
-    // than 5 seconds".
-    if (isTouchingTreeOrBuilding(t)) {
+    // Cooldown satisfied: accumulate dwell time while touching a tree,
+    // building, or crater, reset the instant contact is lost - this is a
+    // continuous 5-second requirement, not a cumulative one, per
+    // "touching...for more than 5 seconds". But a unit currently under an
+    // active move order (state 'moving', set by issueMoveOrder and cleared
+    // once it arrives) must be allowed to walk straight through a crater or
+    // building on the way to its ordered waypoint rather than pausing there
+    // to go invisible mid-transit - concealment is only for a unit that has
+    // actually come to a stop, per "only to go invisible if they are
+    // motionless". So the dwell timer is held at 0 the whole time the unit
+    // is still travelling, and only starts accumulating once it's no longer
+    // 'moving' (idle, attacking in place, defending, etc.) and touching a
+    // qualifying object.
+    if (t.state === 'moving') {
+      t.stealthDwellTime = 0;
+    } else if (isTouchingTreeOrBuilding(t)) {
       t.stealthDwellTime = (t.stealthDwellTime||0) + dt*1000;
       if (t.stealthDwellTime >= STEALTH_TOUCH_DWELL_TIME) {
         t.stealthConcealed = true;
