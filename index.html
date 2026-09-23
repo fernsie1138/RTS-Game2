@@ -84,7 +84,14 @@
   #confirmOverlay {
     position: fixed; inset: 0; background: rgba(6,9,8,0.82);
     display: none; align-items: center; justify-content: center;
-    z-index: 70;
+    /* Must sit above every full-screen menu (launchScreen/optionsScreen at
+       80, instructionsScreen/unitOptionsScreen at 90) - this dialog can be
+       triggered from the title screen's LOAD GAME button, and at z-index 70
+       it was rendering invisibly BEHIND launchScreen: display was correctly
+       set to 'flex', but launchScreen's higher z-index covered it entirely,
+       so the confirm step was unreachable until something later hid
+       launchScreen and suddenly revealed this already-open dialog. */
+    z-index: 95;
   }
   #confirmBox {
     pointer-events: auto;
@@ -110,7 +117,7 @@
   #buildMenuOverlay {
     position: fixed; inset: 0; background: rgba(6,9,8,0.82);
     display: none; align-items: center; justify-content: center;
-    z-index: 70;
+    z-index: 95; /* same reasoning as confirmOverlay above - stay above every full-screen menu */
   }
   #buildMenuBox {
     pointer-events: auto;
@@ -135,6 +142,35 @@
     border-radius: 8px; border: 1px solid rgba(143,168,153,0.4);
     background: rgba(20,28,24,0.9); color: #cfe0d6;
   }
+
+  /* Build placement: a non-modal floating bar (unlike confirmOverlay/
+     buildMenuOverlay above, this deliberately does NOT cover the canvas -
+     the whole point is that the player can still see and drag on the map
+     underneath it to position the structure ghost drawn in render(). Only
+     the bar's own buttons capture pointer events; everywhere else passes
+     straight through to the canvas beneath. */
+  #placementOverlay {
+    display: none;
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+    z-index: 40;
+    flex-direction: column; align-items: center; gap: 8px;
+    pointer-events: none;
+  }
+  #placementHint {
+    background: rgba(20,28,24,0.85); color: #f4efe3;
+    font-size: 12px; letter-spacing: 0.02em;
+    padding: 6px 14px; border-radius: 20px;
+  }
+  #placementButtons { display: flex; gap: 12px; pointer-events: auto; }
+  #placementButtons button {
+    pointer-events: auto;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
+    padding: 10px 22px; border-radius: 10px;
+    border: 1px solid rgba(244,239,227,0.4);
+    background: rgba(20,28,24,0.9); color: #f4efe3;
+  }
+  #btnPlacementConfirm { background: #4fd07a; color: #06170c; border-color: #4fd07a; }
+  #btnPlacementCancel { background: rgba(255,92,77,0.85); color: #1a0605; border-color: rgba(255,92,77,0.85); }
 
   /* Launch screen - brown backdrop (matches the game's grassland ground
      tones / the instructions screen gradient) so any letterboxing around
@@ -655,6 +691,14 @@
   </div>
 </div>
 
+<div id="placementOverlay">
+  <div id="placementHint">Drag on the map to position it</div>
+  <div id="placementButtons">
+    <button id="btnPlacementCancel">CANCEL</button>
+    <button id="btnPlacementConfirm">BUILD HERE</button>
+  </div>
+</div>
+
 <script>
 (function(){
 "use strict";
@@ -706,7 +750,7 @@ let hardMode = false;
 
 // Bumped by one on every exported build so a stale cached copy is always
 // visually distinguishable from the latest version.
-const GAME_VERSION = 114;
+const GAME_VERSION = 116;
 
 // ---------- Art style palette ----------
 // Solid-shape earth-tone style: natural ground colors, dark grey unit hulls,
@@ -4429,9 +4473,12 @@ function issueMoveOrder(t, x, y, suppressAutoEngage) {
   // fully immobile while building, so a fresh move order clearly means the
   // player wants it to go do something else instead, abandoning the build
   // with no partial Foxhole ever appearing (see the BUILD_TIME check in
-  // updateTank, which only spawns the Foxhole on full completion).
+  // updateTank, which only spawns the Foxhole on full completion). Also
+  // cancels a pending walk-to-build-site order from the placement flow
+  // above, for the same reason - a fresh order overrides it.
   t.isBuilding = false;
   t.buildProgress = 0;
+  t.pendingBuildAfterMove = false;
   if (!lineBlockedByMountain(t.x, t.y, x, y)) {
     t.target = {x,y};
     t.path = null;
@@ -4993,6 +5040,17 @@ canvas.addEventListener('pointerdown', (e)=>{
   const p = pointerPos(e);
   pointers.set(e.pointerId, p);
 
+  // While positioning a structure, a single finger drags the ghost around
+  // instead of starting a selection box - two fingers still pan/zoom
+  // normally (falls through below) so the player can still look around the
+  // map while placing.
+  if (pendingBuildPlacement && pointers.size === 1) {
+    const w = screenToWorld(p.x, p.y);
+    pendingBuildPlacement.x = w.x;
+    pendingBuildPlacement.y = w.y;
+    return;
+  }
+
   if (pointers.size === 1) {
     dragSelectBox = {x0:p.x, y0:p.y, x1:p.x, y1:p.y};
     twoFingerActive = false;
@@ -5009,6 +5067,13 @@ canvas.addEventListener('pointermove', (e)=>{
   if (!pointers.has(e.pointerId)) return;
   const p = pointerPos(e);
   pointers.set(e.pointerId, p);
+
+  if (pendingBuildPlacement && pointers.size === 1) {
+    const w = screenToWorld(p.x, p.y);
+    pendingBuildPlacement.x = w.x;
+    pendingBuildPlacement.y = w.y;
+    return;
+  }
 
   if (pointers.size === 1 && dragSelectBox && !twoFingerActive) {
     dragSelectBox.x1 = p.x;
@@ -5038,6 +5103,15 @@ function pointInWorldRect(px, py, wx0, wy0, wx1, wy1){
 
 canvas.addEventListener('pointerup', (e)=>{
   pointers.delete(e.pointerId);
+
+  // Placement is confirmed/cancelled via the BUILD HERE/CANCEL buttons, not
+  // by lifting a finger - just keep the pinch/drag bookkeeping consistent
+  // for whenever placement ends and normal selection input resumes.
+  if (pendingBuildPlacement) {
+    if (pointers.size === 0) { lastPinchDist = null; lastPinchMid = null; twoFingerActive = false; }
+    else if (pointers.size === 1) { lastPinchDist = null; twoFingerActive = true; }
+    return;
+  }
 
   if (pointers.size === 0) {
     if (dragSelectBox && !twoFingerActive) {
@@ -5360,20 +5434,10 @@ function buildBuildMenu(eligibleUnits) {
     const btn = document.createElement('button');
     btn.textContent = cfg.label;
     btn.addEventListener('click', ()=>{
-      eligibleUnits.forEach(t=>{
-        if (!t.alive || t.permanentlyDeployed || !cfg.builtBy.includes(t.unitType)) return; // re-checked at click time (unit could have died, and this specific unit's type might not be eligible for THIS specific structure even if it was eligible for the menu to open at all)
-        t.target = null;
-        t.path = null;
-        t.attackTarget = null;
-        t.autoEngaged = false;
-        t.holdEngage = false;
-        t.defending = false;
-        t.state = 'idle';
-        t.isBuilding = true;
-        t.buildProgress = 0;
-        t.buildingType = key;
-      });
+      const buildersForThis = eligibleUnits.filter(t => t.alive && !t.permanentlyDeployed && cfg.builtBy.includes(t.unitType));
       document.getElementById('buildMenuOverlay').style.display = 'none';
+      if (!buildersForThis.length) return; // re-checked at click time, same as before
+      startBuildPlacement(key, cfg, buildersForThis);
     });
     container.appendChild(btn);
   });
@@ -7170,6 +7234,112 @@ const BUILDABLE_STRUCTURES = {
 function getBuildableStructuresFor(unitType) {
   return Object.entries(BUILDABLE_STRUCTURES).filter(([key,cfg]) => cfg.builtBy.includes(unitType));
 }
+
+// ---------- Build placement (RTS-style ghost positioning) ----------
+// Picking a structure from the BUILD menu no longer starts construction on
+// the spot - it opens a positioning step instead: a translucent outline of
+// the structure appears (drawn in render(), see the "Build-placement ghost"
+// block) that the player drags anywhere on the map, then confirms with
+// BUILD HERE. Only on confirm do the builder(s) actually move there
+// (issueMoveOrder), each flagged with pendingBuildAfterMove so updateTank's
+// arrival check (see the two "d < 6" sites below) starts the real
+// buildProgress countdown only once a builder physically reaches its
+// assigned spot - it stays fixed there for the rest of construction and
+// never moves again once built, exactly like a plain move order followed by
+// the existing build-in-place logic. pendingBuildPlacement is null whenever
+// no placement is in progress.
+let pendingBuildPlacement = null; // { key, cfg, units, x, y }
+
+function placementRadius(key) {
+  return (UNIT_STATS[key] && UNIT_STATS[key].collisionRadius) || 20;
+}
+
+// A generic "how much space does this thing occupy" radius, used only for
+// keeping a new structure from being dropped on top of something else -
+// buildings report their actual footprint bounding box; everything else
+// (units, foxholes/barricades already built) falls back to its collision
+// radius.
+function entityFootprintRadius(e) {
+  if (e.footprint && Array.isArray(e.footprint.cells) && e.footprint.cells.length) {
+    const xs = e.footprint.cells.map(c=>c[0]);
+    const ys = e.footprint.cells.map(c=>c[1]);
+    const w = (Math.max(...xs)-Math.min(...xs)+1) * e.footprint.cellSize;
+    const h = (Math.max(...ys)-Math.min(...ys)+1) * e.footprint.cellSize;
+    return Math.max(w,h)/2;
+  }
+  return e.radius || e.collisionRadius || 20;
+}
+
+// Keeps a placement off mountains, off the map edge, and clear of every
+// other building/unit currently on the map - deliberately NOT excluding
+// trees (the player can already place things near trees elsewhere) so this
+// stays a simple, fast check rather than a full copy of genBuildings' own
+// placement rules. `excludeUnits` skips the builder(s) actually being sent
+// there, since it's normal (and expected) for the ghost to start out right
+// next to - or on top of - the unit that's about to walk into it.
+function isValidStructurePlacement(x, y, radius, excludeUnits) {
+  if (isMountain(x, y)) return false;
+  if (x < 50 || y < 50 || x > WORLD.w-50 || y > WORLD.h-50) return false;
+  const skip = new Set((excludeUnits||[]).map(u=>u.id));
+  for (const b of buildings) {
+    if (!b.alive) continue;
+    const r = entityFootprintRadius(b);
+    if (Math.hypot(b.x-x, b.y-y) < r + radius + 8) return false;
+  }
+  for (const e of entities) {
+    if (e.kind !== 'tank' || !e.alive || skip.has(e.id)) continue;
+    const r = entityFootprintRadius(e);
+    if (Math.hypot(e.x-x, e.y-y) < r + radius + 8) return false;
+  }
+  return true;
+}
+
+function startBuildPlacement(key, cfg, units) {
+  let ax = 0, ay = 0;
+  units.forEach(u => { ax += u.x; ay += u.y; });
+  ax /= units.length; ay /= units.length;
+  pendingBuildPlacement = { key, cfg, units, x: ax, y: ay };
+  document.getElementById('placementOverlay').style.display = 'flex';
+}
+
+document.getElementById('btnPlacementConfirm').addEventListener('click', ()=>{
+  if (!pendingBuildPlacement) return;
+  const { key, units, x, y } = pendingBuildPlacement;
+  const radius = placementRadius(key);
+  if (!isValidStructurePlacement(x, y, radius, units)) {
+    showToast("Can't build there");
+    return;
+  }
+  // Multiple builders spread into a small grid around the chosen point
+  // (same offset pattern already used for ordinary multi-unit move orders,
+  // see handleTap), each then building its own copy once it arrives -
+  // matching how picking a structure with several units selected already
+  // behaved, just now landing at a chosen spot instead of wherever each
+  // unit happened to be standing.
+  const n = units.length;
+  const cols = Math.ceil(Math.sqrt(n));
+  const spacing = radius*2 + 8;
+  units.forEach((t, i) => {
+    if (!t.alive) return;
+    const row = Math.floor(i/cols), col = i%cols;
+    const offX = (col - (cols-1)/2) * spacing;
+    const offY = (row - (Math.ceil(n/cols)-1)/2) * spacing;
+    let destX = x+offX, destY = y+offY;
+    if (isMountain(destX, destY)) { destX = x; destY = y; }
+    issueMoveOrder(t, destX, destY, true);
+    if (t.target) {
+      t.buildingType = key;
+      t.pendingBuildAfterMove = true;
+    }
+  });
+  pendingBuildPlacement = null;
+  document.getElementById('placementOverlay').style.display = 'none';
+});
+document.getElementById('btnPlacementCancel').addEventListener('click', ()=>{
+  pendingBuildPlacement = null;
+  document.getElementById('placementOverlay').style.display = 'none';
+});
+
 const BUILD_TIME = 30; // kept as the Foxhole-specific legacy constant other code may still reference; BUILDABLE_STRUCTURES.foxhole.buildTime is the authoritative value used by the actual build-progress logic below
 
 function updateTank(t, dt, now) {
@@ -7406,7 +7576,19 @@ function updateTank(t, dt, now) {
       moveAlongPath(t, dt);
     } else {
       const d = Math.hypot(t.target.x-t.x, t.target.y-t.y);
-      if (d < 6) { t.target = null; t.state='idle'; t.holdEngage = false; }
+      if (d < 6) {
+        t.target = null; t.state='idle'; t.holdEngage = false;
+        // Arrived at a placement-flow destination: hand off from moving to
+        // actually building, right here where the unit is now standing -
+        // see startBuildPlacement/btnPlacementConfirm above, which set
+        // buildingType and this flag instead of starting isBuilding
+        // immediately the way the old build-in-place flow used to.
+        if (t.pendingBuildAfterMove) {
+          t.pendingBuildAfterMove = false;
+          t.isBuilding = true;
+          t.buildProgress = 0;
+        }
+      }
       else {
         const ang = Math.atan2(t.target.y-t.y, t.target.x-t.x);
         t.angle = ang;
@@ -7419,7 +7601,12 @@ function updateTank(t, dt, now) {
           // ran into a mountain edge unexpectedly - compute a path around it rather than stopping
           const path = findPath(t.x, t.y, t.target.x, t.target.y);
           if (path && path.length) { t.path = path; }
-          else { t.target = null; t.state = 'idle'; t.holdEngage = false; }
+          else {
+            // Genuinely stuck with no route - drop the order, and with it
+            // any pending build (there's nowhere for it to arrive to build).
+            t.target = null; t.state = 'idle'; t.holdEngage = false;
+            t.pendingBuildAfterMove = false;
+          }
         }
       }
     }
@@ -9350,6 +9537,26 @@ function applyLoadedGame(data) {
     showToast('Save is from an incompatible version'); return;
   }
 
+  // Loading can be triggered from the title screen (LOAD GAME) as well as
+  // from inside an active match (the HUD's LOAD/LOAD FILE buttons) - in the
+  // title-screen case appState is still 'launch', which makes gameLoop
+  // early-return every frame without ever rendering or simulating anything
+  // (see the "appState === 'launch'" branch), so the load would otherwise
+  // apply successfully to the underlying state while the player kept
+  // looking at an unchanged title screen. Unconditionally switching to the
+  // play view here - the same screen-state change enterPlayMode makes,
+  // minus generateNewMap/startPlayMode since a load supplies its own map
+  // and units - means a loaded game always appears immediately regardless
+  // of which screen the player loaded it from. When already in play this is
+  // a no-op (the elements are already in this state).
+  appState = 'play';
+  document.getElementById('launchScreen').style.display = 'none';
+  document.getElementById('optionsScreen').style.display = 'none';
+  document.getElementById('unitOptionsScreen').style.display = 'none';
+  document.getElementById('btnTestDone').style.display = 'none';
+  document.getElementById('buyRow').style.display = 'flex';
+
+
   // reset transient UI/interaction state before rebuilding entities, since
   // in-flight drags/selections reference objects that are about to be replaced
   clearSelection();
@@ -9460,6 +9667,20 @@ function applyLoadedGame(data) {
   }
   if (Array.isArray(data.buildings)) {
     buildings = data.buildings.map(b => Object.assign({ kind: 'building' }, b, { occupantIds: [] }));
+    // A save made before the current 10-building sprite system has each
+    // building's old `shape` field but no `buildingType` - drawBuilding
+    // treats that as "predates this system" and falls back to the old
+    // procedural/legacy sprite renderer for it (see drawBuilding), which is
+    // exactly why loading an old save showed buildings "from a very early
+    // version of the game". Assigning a current buildingType here instead
+    // means every building on a loaded map renders with today's art -
+    // position, footprint, rotation, hp and battle damage still all come
+    // from the save; only which sprite gets drawn over that footprint
+    // changes. (Fresh saves already have buildingType set and are untouched
+    // by this loop.)
+    buildings.forEach(b => {
+      if (!b.buildingType) b.buildingType = BUILDING_TYPES[Math.floor(Math.random()*BUILDING_TYPES.length)].key;
+    });
   } else if (typeof data.terrainSeed === 'number') {
     genBuildings(data.terrainSeed);
   }
@@ -10160,6 +10381,34 @@ function render() {
 
   // fog of war overlay (drawn on top of everything except UI)
   drawFogOverlay();
+
+  // Build-placement ghost: a translucent, dashed outline of the structure
+  // being positioned (see startBuildPlacement/pendingBuildPlacement),
+  // tinted green where it could actually be built and red where it
+  // couldn't (mountain, map edge, or overlapping an existing building/
+  // unit - see isValidStructurePlacement). Drawn after the fog overlay so
+  // it's always crisp regardless of what's underneath - it's a placement
+  // aid, not a real object on the map yet.
+  if (pendingBuildPlacement) {
+    const { x, y, cfg } = pendingBuildPlacement;
+    const radius = placementRadius(pendingBuildPlacement.key);
+    const valid = isValidStructurePlacement(x, y, radius, pendingBuildPlacement.units);
+    const s = worldToScreen(x, y);
+    const half = radius * camera.zoom;
+    ctx.save();
+    ctx.strokeStyle = valid ? 'rgba(79,208,122,0.95)' : 'rgba(255,92,77,0.95)';
+    ctx.fillStyle = valid ? 'rgba(79,208,122,0.18)' : 'rgba(255,92,77,0.18)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6,5]);
+    ctx.fillRect(s.x-half, s.y-half, half*2, half*2);
+    ctx.strokeRect(s.x-half, s.y-half, half*2, half*2);
+    ctx.setLineDash([]);
+    ctx.font = `${Math.max(10, Math.round(11*camera.zoom))}px -apple-system, sans-serif`;
+    ctx.fillStyle = valid ? 'rgba(210,255,222,0.95)' : 'rgba(255,214,209,0.95)';
+    ctx.textAlign = 'center';
+    ctx.fillText(cfg.label.toUpperCase(), s.x, s.y - half - 6);
+    ctx.restore();
+  }
 
   // drag select box (single-finger only)
   if (dragSelectBox && !twoFingerActive) {
