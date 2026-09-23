@@ -750,7 +750,7 @@ let hardMode = false;
 
 // Bumped by one on every exported build so a stale cached copy is always
 // visually distinguishable from the latest version.
-const GAME_VERSION = 116;
+const GAME_VERSION = 117;
 
 // ---------- Art style palette ----------
 // Solid-shape earth-tone style: natural ground colors, dark grey unit hulls,
@@ -3219,11 +3219,37 @@ function genTrees(seedValue) {
   const scale = Math.sqrt((WORLD.w*WORLD.h) / (BASE_WORLD_W*BASE_WORLD_H)) * biomeCfg.treeDensityMultiplier;
   const baseClearance = 320*Math.sqrt((WORLD.w*WORLD.h)/(BASE_WORLD_W*BASE_WORLD_H)), forestClearance = 420*Math.sqrt((WORLD.w*WORLD.h)/(BASE_WORLD_W*BASE_WORLD_H));
 
+  // Keeps ordinary scattered/forest trees off the actual paved road surface
+  // (the tree-LINING trees above are already placed outside the paved strip
+  // by construction via their own setback, so this is only needed for the
+  // general placement pass below) - checks against each road tile's real
+  // paved strip the same way building/compound placement already does,
+  // padded by a tree's own collision radius so a trunk can't even
+  // physically clip the edge of the road surface.
+  function isPointOnRoad(x, y) {
+    if (!roadGrid.length) return false;
+    const roadHalfWidth = ROAD_TILE_SIZE*0.28;
+    const roadHalfLength = ROAD_TILE_SIZE/2;
+    const pad = TREE_COLLISION_RADIUS;
+    for (const cell of roadGrid) {
+      const cx = cell.col*ROAD_TILE_SIZE + ROAD_TILE_SIZE/2;
+      const cy = cell.row*ROAD_TILE_SIZE + ROAD_TILE_SIZE/2;
+      if (Math.abs(x-cx) > roadHalfLength+pad || Math.abs(y-cy) > roadHalfLength+pad) continue; // cheap pre-filter
+      const dirs = rotateDirSetCW(ROAD_TILE_NATIVE_DIRS[cell.tile], cell.rotation);
+      if ((dirs.includes('N') || dirs.includes('S')) &&
+          Math.abs(x-cx) < roadHalfWidth+pad && Math.abs(y-cy) < roadHalfLength+pad) return true;
+      if ((dirs.includes('E') || dirs.includes('W')) &&
+          Math.abs(x-cx) < roadHalfLength+pad && Math.abs(y-cy) < roadHalfWidth+pad) return true;
+    }
+    return false;
+  }
+
   function tryPlaceTree(x, y) {
     if (x<40||y<40||x>WORLD.w-40||y>WORLD.h-40) return false;
     if (isMountain(x,y)) return false;
     if (Math.hypot(x-blueBaseStart.x, y-blueBaseStart.y) < baseClearance) return false;
     if (Math.hypot(x-redBaseStart.x, y-redBaseStart.y) < baseClearance) return false;
+    if (isPointOnRoad(x,y)) return false;
     trees.push({
       id: nextId(), kind: 'tree',
       x, y,
@@ -3878,6 +3904,69 @@ function genBuildings(seedValue) {
     return { x: cx + perpX*dist*side, y: cy + perpY*dist*side, roadAngle };
   }
 
+  // ---------------------------------------------------------------------------
+  // "Every building sits on a compound" (Industrial Hell excepted - its dense
+  // city blocks are deliberately bare buildings with no pad, by design, so
+  // this simply no-ops there). The settlement passes below place buildings
+  // directly at a roadside spot with no compound of their own, unlike the
+  // compoundTargets pass just below which places buildings onto compounds
+  // genCompounds already built. This retrofits a compound pad under each of
+  // THOSE freestanding buildings instead, sized to hug the building's own
+  // footprint (plus a little margin) and nudged/shrunk to clear any nearby
+  // road exactly like a building's own placement already does - "compounds
+  // are not to be placed overlapping roads" applies just as much to these as
+  // to the ones genCompounds placed. Purely decorative (compounds carry no
+  // collision of their own - see the comment at their declaration), so
+  // there's no risk of this rejecting or displacing the building itself;
+  // worst case (no legal spot for a pad at all - rare, e.g. a tight gap
+  // between two roads) the building simply ends up without one.
+  const compoundRoadHalfWidth = ROAD_TILE_SIZE*0.16;
+  const compoundRoadGap = 12;
+  function compoundRectOverlapsRoad(x,y,hx,hy) {
+    for (const cell of roadGrid) {
+      const cx = cell.col*ROAD_TILE_SIZE + ROAD_TILE_SIZE/2;
+      const cy = cell.row*ROAD_TILE_SIZE + ROAD_TILE_SIZE/2;
+      const dirs = rotateDirSetCW(ROAD_TILE_NATIVE_DIRS[cell.tile], cell.rotation);
+      if (dirs.includes('N') || dirs.includes('S')) {
+        if (Math.abs(x-cx) < hx+compoundRoadHalfWidth+compoundRoadGap && Math.abs(y-cy) < hy+ROAD_TILE_SIZE/2+compoundRoadGap) return true;
+      }
+      if (dirs.includes('E') || dirs.includes('W')) {
+        if (Math.abs(x-cx) < hx+ROAD_TILE_SIZE/2+compoundRoadGap && Math.abs(y-cy) < hy+compoundRoadHalfWidth+compoundRoadGap) return true;
+      }
+    }
+    return false;
+  }
+  function attachCompoundUnderBuilding(b) {
+    if (!b || currentBiome === 'urban') return;
+    const minx = Math.min(...b.footprint.cells.map(c=>c[0])), maxx = Math.max(...b.footprint.cells.map(c=>c[0]));
+    const miny = Math.min(...b.footprint.cells.map(c=>c[1])), maxy = Math.max(...b.footprint.cells.map(c=>c[1]));
+    const buildingHalfW = (maxx-minx+1)*b.footprint.cellSize/2;
+    const buildingHalfH = (maxy-miny+1)*b.footprint.cellSize/2;
+    const key = COMPOUND_KEYS[Math.floor(rnd()*COMPOUND_KEYS.length)];
+    const meta = COMPOUND_META[key];
+    const aspect = meta[0]/meta[1];
+    const margin = 22 + rnd()*14;
+    const longSide = Math.max(buildingHalfW,buildingHalfH)*2 + margin*2;
+    let w = longSide, h = longSide/aspect;
+    if (aspect < 1) { h = longSide; w = longSide*aspect; }
+    let hx = w/2, hy = h/2;
+    if (Math.round(b.rotation/(Math.PI/2)) % 2) { [hx,hy] = [hy,hx]; }
+    if (compoundRectOverlapsRoad(b.x,b.y,hx,hy)) {
+      // Shrink to a tight fit around just the building itself rather than
+      // give up on a pad entirely.
+      hx = buildingHalfW + 4; hy = buildingHalfH + 4;
+      if (compoundRectOverlapsRoad(b.x,b.y,hx,hy)) return; // no legal spot even at the minimum size
+    }
+    compounds.push({ id: nextId(), key, x: b.x, y: b.y, size: longSide, rotation: b.rotation, hx, hy, hasBuilding: true });
+  }
+  // Thin wrapper used by every freestanding settlement pass below in place
+  // of calling tryPlaceBuilding directly, so each one automatically gets its
+  // compound pad without repeating the attach call at every site.
+  function placeBuildingWithCompound(x, y, placementOptions=null) {
+    const placed = tryPlaceBuilding(x, y, placementOptions);
+    if (placed) attachCompoundUnderBuilding(buildings[buildings.length-1]);
+    return placed;
+  }
 
   // Two-thirds of compounds receive a normal game building centred exactly
   // on the compound's visual centre. These buildings are placed BEFORE the
@@ -3966,7 +4055,7 @@ function genBuildings(seedValue) {
         const cx = cell.col*ROAD_TILE_SIZE + ROAD_TILE_SIZE/2, cy = cell.row*ROAD_TILE_SIZE + ROAD_TILE_SIZE/2;
         const ang = rnd()*Math.PI*2;
         const dist = ROAD_TILE_SIZE*0.42 + rnd()*40; // just outside the tile's own paved area
-        tryPlaceBuilding(cx+Math.cos(ang)*dist, cy+Math.sin(ang)*dist);
+        placeBuildingWithCompound(cx+Math.cos(ang)*dist, cy+Math.sin(ang)*dist);
       }
     });
   } else if (biomeCfg.buildingStyle === 'cityDense') {
@@ -4010,13 +4099,13 @@ function genBuildings(seedValue) {
       } while (tries<30 && (isMountain(spot.x,spot.y) || Math.hypot(spot.x-blueBaseStart.x,spot.y-blueBaseStart.y)<baseClearance || Math.hypot(spot.x-redBaseStart.x,spot.y-redBaseStart.y)<baseClearance));
       if (tries>=30) continue;
 
-      tryPlaceBuilding(spot.x, spot.y);
+      placeBuildingWithCompound(spot.x, spot.y);
       if (rnd() < 0.4) {
         const alongX = Math.cos(spot.roadAngle||0), alongY = Math.sin(spot.roadAngle||0);
         const extra = 1 + Math.floor(rnd()*2);
         for (let e=0;e<extra;e++) {
           const along = (rnd()*2-1)*110;
-          tryPlaceBuilding(spot.x+alongX*along, spot.y+alongY*along);
+          placeBuildingWithCompound(spot.x+alongX*along, spot.y+alongY*along);
         }
       }
     }
@@ -4035,7 +4124,7 @@ function genBuildings(seedValue) {
       for (let gy=-blockRadius; gy<=blockRadius; gy+=gridStep) {
         if (Math.hypot(gx,gy) > blockRadius) continue; // keep the block roughly circular/organic rather than a hard square
         const jx = centerX+gx+(rnd()*2-1)*20, jy = centerY+gy+(rnd()*2-1)*20;
-        tryPlaceBuilding(jx, jy);
+        placeBuildingWithCompound(jx, jy);
       }
     }
   }
@@ -4062,7 +4151,7 @@ function genBuildings(seedValue) {
     if (isMountain(spot.x,spot.y)) continue;
     if (Math.hypot(spot.x-blueBaseStart.x,spot.y-blueBaseStart.y) < baseClearance) continue;
     if (Math.hypot(spot.x-redBaseStart.x,spot.y-redBaseStart.y) < baseClearance) continue;
-    tryPlaceBuilding(spot.x, spot.y);
+    placeBuildingWithCompound(spot.x, spot.y);
   }
 }
 genCompounds(terrainSeed);
